@@ -528,6 +528,19 @@ a.card-link:focus-visible {
   white-space: pre-line;
 }
 
+/* 맨 아래 작은 관리자 링크 */
+.site-foot {
+  text-align: center;
+  font-size: 12px;
+}
+
+.site-foot a {
+  color: var(--muted);
+  text-decoration: none;
+}
+
+.site-foot a:hover { color: var(--blue); text-decoration: underline; }
+
 /* ===== 화면 폭에 따라 ===== */
 @media (max-width: 1100px) {
   .cards { grid-template-columns: repeat(2, 1fr); }
