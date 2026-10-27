@@ -353,6 +353,7 @@ async function loadProfile() {
       $('pf-profile-' + key).value = (profile && profile[key]) || '';
     });
     showPhoto(profile && profile.photo_url, photoFailed);
+    updatePhotoDeleteButton();
   } catch (error) {
     setMessage('profile-message', '프로필을 불러오지 못했어요. ' + error.message, true);
   }
@@ -366,6 +367,62 @@ function photoFailed() {
       (profile && profile.photo_url),
     true
   );
+}
+
+// 지울 사진(저장된 사진이나 고른 사진)이 있을 때만 "사진 삭제" 버튼을 쓸 수 있다
+function updatePhotoDeleteButton() {
+  const hasPhoto = Boolean(profile && profile.photo_url);
+  const hasPicked = Boolean($('profile-photo-file').files[0]);
+  $('profile-photo-delete').disabled = !hasPhoto && !hasPicked;
+}
+
+// 보관함 공개 주소에서 파일 경로(profile/…png)를 꺼낸다. 다른 곳 주소면 null
+function storagePathFromUrl(url) {
+  const prefix = SUPABASE_URL + '/storage/v1/object/public/' + BUCKET + '/';
+  return url && url.startsWith(prefix) ? url.slice(prefix.length) : null;
+}
+
+async function deleteProfilePhoto() {
+  const savedUrl = profile && profile.photo_url;
+
+  // 저장된 사진은 없고 고르기만 했다면, 고른 것만 취소한다
+  if (!savedUrl) {
+    $('profile-photo-file').value = '';
+    showPhoto(null);
+    updatePhotoDeleteButton();
+    setMessage('profile-message', '고른 사진을 취소했어요.');
+    return;
+  }
+
+  if (!confirm('프로필 사진을 지울까요?\n방문자 화면에서도 사라지고, 되돌릴 수 없어요.')) return;
+
+  await busy($('profile-photo-delete'), async () => {
+    try {
+      // 1) 방문자 화면에서 먼저 빠지도록 photo_url 을 비운다
+      const rows = await apiChange('profile?id=eq.1', 'PATCH', {
+        photo_url: null,
+        updated_at: new Date().toISOString()
+      });
+      profile = rows[0];
+      $('profile-photo-file').value = '';
+      showPhoto(null);
+
+      // 2) 보관함의 사진 파일도 지운다
+      const path = storagePathFromUrl(savedUrl);
+      if (path) {
+        try {
+          await send(SUPABASE_URL + '/storage/v1/object/' + BUCKET + '/' + path, { method: 'DELETE' });
+        } catch (error) {
+          setMessage('profile-message', '사진은 화면에서 뺐지만, 보관함 파일은 지우지 못했어요. ' + error.message, true);
+          return;
+        }
+      }
+      setMessage('profile-message', '사진을 지웠어요. 방문자 화면을 새로고침하면 회색 자리로 보여요.');
+    } catch (error) {
+      setMessage('profile-message', '사진을 지우지 못했어요. ' + error.message, true);
+    }
+  });
+  updatePhotoDeleteButton();
 }
 
 async function saveProfile() {
@@ -393,6 +450,7 @@ async function saveProfile() {
       $('profile-photo-file').value = '';
       setMessage('profile-message', '저장했어요. 방문자 화면을 새로고침하면 보여요.');
       showPhoto(profile.photo_url, photoFailed);
+      updatePhotoDeleteButton();
     } catch (error) {
       setMessage('profile-message', '저장하지 못했어요. ' + error.message, true);
     }
@@ -683,6 +741,7 @@ async function start() {
   });
   $('logout-button').addEventListener('click', logout);
   $('profile-save').addEventListener('click', saveProfile);
+  $('profile-photo-delete').addEventListener('click', deleteProfilePhoto);
   $('project-new').addEventListener('click', () => openEditor(null));
   $('project-save').addEventListener('click', saveProject);
   $('project-cancel').addEventListener('click', closeEditor);
@@ -692,6 +751,8 @@ async function start() {
     showPhoto(URL.createObjectURL(file));
     setMessage('profile-message', '미리보기예요. "프로필 저장"을 눌러야 올라가고 방문자 화면에 보여요.');
   });
+  // 위에서 잘못된 파일을 비운 뒤에 버튼 상태를 맞춘다
+  $('profile-photo-file').addEventListener('change', updatePhotoDeleteButton);
   watchFileInput($('pf-thumb-file'), IMAGE_TYPES, 'project-message');
   watchFileInput($('pf-file-file'), FILE_TYPES, 'project-message');
 
