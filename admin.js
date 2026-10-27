@@ -683,7 +683,8 @@ function renderLikes() {
 async function resetLikes(project) {
   if (!confirm('"' + project.title + '" 카드의 좋아요를 0으로 되돌릴까요?\n되돌릴 수 없어요.')) return;
   try {
-    await apiChange('likes?project_id=eq.' + project.id, 'DELETE');
+    // client_id 칸은 숨겨져 있어서, 지운 줄의 id 만 돌려받는다
+    await apiChange('likes?project_id=eq.' + project.id + '&select=id', 'DELETE');
     setMessage('like-message', '좋아요를 초기화했어요.');
   } catch (error) {
     setMessage('like-message', '초기화하지 못했어요. ' + error.message, true);

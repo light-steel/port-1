@@ -203,30 +203,37 @@ function createCard(project, likeCount) {
 
 function createLikeButton(projectId, startCount) {
   let count = startCount;
-  const liked = loadLocal('resume_liked', []);
-
   const button = el('button', 'like');
   button.type = 'button';
   const number = el('span', 'like-count', String(count));
   button.innerHTML = HEART_ICON;
   button.append(number);
 
-  function showLiked() {
-    button.classList.add('liked');
-    button.setAttribute('aria-pressed', 'true');
-    button.setAttribute('aria-label', '좋아요 누름, ' + count + '개');
+  // 누른 상태(빨간 하트)와 안 누른 상태(빈 하트)를 화면에 그린다
+  function show(liked) {
+    number.textContent = String(count);
+    button.classList.toggle('liked', liked);
+    button.setAttribute('aria-pressed', String(liked));
+    button.setAttribute('aria-label', (liked ? '좋아요 취소하기, ' : '좋아요, ') + count + '개');
   }
 
-  if (liked.includes(projectId)) {
-    showLiked();
-  } else {
-    button.setAttribute('aria-pressed', 'false');
-    button.setAttribute('aria-label', '좋아요, ' + count + '개');
-  }
+  show(loadLocal('resume_liked', []).includes(projectId));
 
   button.addEventListener('click', async () => {
-    if (button.classList.contains('liked') || button.disabled) return;
+    if (button.disabled) return;
     button.disabled = true;
+    try {
+      if (button.classList.contains('liked')) {
+        await unlike();
+      } else {
+        await like();
+      }
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  async function like() {
     try {
       await api('likes', {
         method: 'POST',
@@ -234,31 +241,43 @@ function createLikeButton(projectId, startCount) {
         body: { project_id: projectId, client_id: getClientId() }
       });
       count += 1;
-      number.textContent = String(count);
-      rememberLike(projectId);
-      showLiked();
+      setLiked(projectId, true);
+      show(true);
     } catch (error) {
       if (error.code === '23505') {
         // 이 브라우저는 이미 눌렀던 카드
-        rememberLike(projectId);
-        showLiked();
+        setLiked(projectId, true);
+        show(true);
       } else {
         alert('좋아요를 남기지 못했습니다. 잠시 후 다시 눌러 주세요.');
       }
-    } finally {
-      button.disabled = false;
     }
-  });
+  }
+
+  async function unlike() {
+    try {
+      // 이 카드 + 이 브라우저 번호가 맞는 좋아요만 지워진다
+      const removed = await api('rpc/resume_unlike', {
+        method: 'POST',
+        body: { p_project_id: projectId, p_client_id: getClientId() }
+      });
+      // 관리자가 이미 초기화했으면 지울 줄이 없으니 숫자는 그대로 둔다
+      if (removed) count = Math.max(0, count - 1);
+      setLiked(projectId, false);
+      show(false);
+    } catch {
+      alert('좋아요를 취소하지 못했습니다. 잠시 후 다시 눌러 주세요.');
+    }
+  }
 
   return button;
 }
 
-function rememberLike(projectId) {
-  const liked = loadLocal('resume_liked', []);
-  if (!liked.includes(projectId)) {
-    liked.push(projectId);
-    saveLocal('resume_liked', liked);
-  }
+// 이 브라우저가 어느 카드에 좋아요를 눌렀는지 기억한다
+function setLiked(projectId, liked) {
+  const list = loadLocal('resume_liked', []).filter((id) => id !== projectId);
+  if (liked) list.push(projectId);
+  saveLocal('resume_liked', list);
 }
 
 // ===== 방명록 =====

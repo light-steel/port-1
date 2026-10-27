@@ -411,7 +411,6 @@ a.card-link:focus-visible {
   border-color: #fecdd3;
   background: #fff1f2;
   color: #e11d48;
-  cursor: default;
 }
 
 .like.liked svg { fill: currentColor; }
