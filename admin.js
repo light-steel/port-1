@@ -153,6 +153,9 @@ async function apiChange(path, method, body) {
 // ===== 파일 올리기 =====
 function checkFile(file, allowedTypes) {
   if (!file) return null;
+  if (/heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name)) {
+    return '아이폰 사진(HEIC)은 올릴 수 없어요. JPG나 PNG로 바꿔서 골라 주세요.';
+  }
   if (!allowedTypes[file.type]) {
     return allowedTypes === IMAGE_TYPES
       ? '이미지 파일(PNG·JPG·WEBP·GIF)만 올릴 수 있어요.'
@@ -180,15 +183,17 @@ async function uploadFile(file, folder, allowedTypes) {
   return SUPABASE_URL + '/storage/v1/object/public/' + BUCKET + '/' + path;
 }
 
-// 파일을 고르자마자 종류·크기를 확인해 안내한다
-function watchFileInput(input, allowedTypes, messageId) {
+// 파일을 고르자마자 종류·크기를 확인해 안내한다 (onPick: 쓸 수 있는 파일을 골랐을 때 할 일)
+function watchFileInput(input, allowedTypes, messageId, onPick) {
   input.addEventListener('change', () => {
-    const problem = checkFile(input.files[0], allowedTypes);
+    const file = input.files[0];
+    const problem = checkFile(file, allowedTypes);
     if (problem) {
       setMessage(messageId, problem, true);
       input.value = '';
     } else {
       setMessage(messageId, '');
+      if (file && onPick) onPick(file);
     }
   });
 }
@@ -321,15 +326,19 @@ function buildProfileForm() {
   });
 }
 
-function showPhoto(url) {
+// onFail: 사진 주소를 열 수 없을 때 할 일
+function showPhoto(url, onFail) {
   const box = $('profile-photo-preview');
   box.textContent = '';
-  const safe = safeUrl(url);
+  const safe = safeUrl(url) || (url && url.startsWith('blob:') ? url : null);
   if (safe) {
     const img = el('img');
     img.src = safe;
-    img.alt = '지금 프로필 사진';
-    img.addEventListener('error', () => { box.innerHTML = PERSON_ICON; });
+    img.alt = '프로필 사진 미리보기';
+    img.addEventListener('error', () => {
+      box.innerHTML = PERSON_ICON;
+      if (onFail) onFail();
+    });
     box.append(img);
   } else {
     box.innerHTML = PERSON_ICON;
@@ -343,10 +352,20 @@ async function loadProfile() {
     PROFILE_FIELDS.forEach(([key]) => {
       $('pf-profile-' + key).value = (profile && profile[key]) || '';
     });
-    showPhoto(profile && profile.photo_url);
+    showPhoto(profile && profile.photo_url, photoFailed);
   } catch (error) {
     setMessage('profile-message', '프로필을 불러오지 못했어요. ' + error.message, true);
   }
+}
+
+// 저장된 사진 주소가 열리지 않을 때 이유를 찾을 수 있게 주소를 함께 보여 준다
+function photoFailed() {
+  setMessage(
+    'profile-message',
+    '사진 주소를 열 수 없어요. Supabase > Storage 에서 resume 보관함이 Public 인지 확인해 주세요. 주소: ' +
+      (profile && profile.photo_url),
+    true
+  );
 }
 
 async function saveProfile() {
@@ -372,8 +391,8 @@ async function saveProfile() {
       });
       profile = rows[0];
       $('profile-photo-file').value = '';
-      showPhoto(profile.photo_url);
       setMessage('profile-message', '저장했어요. 방문자 화면을 새로고침하면 보여요.');
+      showPhoto(profile.photo_url, photoFailed);
     } catch (error) {
       setMessage('profile-message', '저장하지 못했어요. ' + error.message, true);
     }
@@ -668,7 +687,11 @@ async function start() {
   $('project-save').addEventListener('click', saveProject);
   $('project-cancel').addEventListener('click', closeEditor);
 
-  watchFileInput($('profile-photo-file'), IMAGE_TYPES, 'profile-message');
+  watchFileInput($('profile-photo-file'), IMAGE_TYPES, 'profile-message', (file) => {
+    // 고른 사진을 바로 미리 보여 준다 (아직 올라가지 않은 상태)
+    showPhoto(URL.createObjectURL(file));
+    setMessage('profile-message', '미리보기예요. "프로필 저장"을 눌러야 올라가고 방문자 화면에 보여요.');
+  });
   watchFileInput($('pf-thumb-file'), IMAGE_TYPES, 'project-message');
   watchFileInput($('pf-file-file'), FILE_TYPES, 'project-message');
 
